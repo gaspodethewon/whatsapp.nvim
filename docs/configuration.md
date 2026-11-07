@@ -27,6 +27,14 @@ require("whatsapp").setup({
 
 `kitty` draws pictures inside their bubble and needs a Kitty graphics terminal (Ghostty, kitty, WezTerm, Konsole) plus ImageMagick or macOS `sips`; `tag` shows the `[image ✓]` line and `gx` opens the file. `auto` picks `kitty` when both are found. Inside tmux the plugin enables `allow-passthrough` for its pane.
 
+### Remote and tmux
+
+Pictures work over SSH. Run Neovim and the plugin on the remote machine; the picture data travels through the terminal connection, so your local terminal only needs to speak the Kitty graphics protocol. ImageMagick or `sips` must be installed on the remote machine, because conversion happens where Neovim runs.
+
+kitty sends `TERM=xterm-kitty` over SSH, so `auto` finds it. Ghostty and WezTerm identify themselves through variables SSH does not forward; set `images = { mode = "kitty" }` on the remote machine.
+
+tmux must run on the same machine as Neovim. With tmux on your local machine and SSH inside it, the plugin cannot tell tmux is there and pictures stay blank; set `images = { mode = "tag" }` for that setup.
+
 ## Highlight groups
 
 `WhatsAppUnread`, `WhatsAppFilter`, `WhatsAppCurrent`, `WhatsAppTime`, `WhatsAppSender`, `WhatsAppMe`, `WhatsAppMedia`, `WhatsAppSeparator`, `WhatsAppQuote`, `WhatsAppBubble`, `WhatsAppBubbleMe`. Override them after `setup()`.

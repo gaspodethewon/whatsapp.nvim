@@ -109,6 +109,19 @@ function M.kitty_cmd(opts, payload)
   return "\27_G" .. table.concat(parts, ",") .. (payload and (";" .. payload) or "") .. "\27\\"
 end
 
+-- The protocol caps one escape's payload at 4096 base64 bytes. Only the
+-- first chunk carries the keys; later ones say whether more follow.
+function M.kitty_chunks(opts, data)
+  local b64 = vim.base64.encode(data)
+  local size, out = 4096, {}
+  for i = 1, math.max(#b64, 1), size do
+    local more = i + size <= #b64 and 1 or 0
+    local o = #out == 0 and vim.tbl_extend("force", opts, { m = more }) or { m = more, q = opts.q }
+    out[#out + 1] = M.kitty_cmd(o, b64:sub(i, i + size - 1))
+  end
+  return out
+end
+
 -- tmux only forwards escapes it is told to ignore; the wrapper doubles the
 -- inner escapes so tmux's own parser skips them.
 function M.wrap_tmux(data)
@@ -225,13 +238,23 @@ local function transmit(entry)
   if sent[entry.id] then
     return
   end
+  local f = io.open(entry.png, "rb")
+  if not f then
+    return
+  end
+  local data = f:read("*a")
+  f:close()
   sent[entry.id] = true
-  -- t=f hands the terminal a path, so no chunking and no base64 of pixels.
-  local opts = { a = "T", f = 100, t = "f", U = 1, q = 2, i = entry.id, c = entry.cols, r = entry.rows }
+  -- Send the bytes, not a path: over SSH the terminal runs on another
+  -- machine and cannot open this cache.
+  local opts = { a = "T", f = 100, t = "d", U = 1, q = 2, i = entry.id, c = entry.cols, r = entry.rows }
   if entry.crop then
     opts.x, opts.y, opts.w, opts.h = entry.crop.x, entry.crop.y, entry.crop.w, entry.crop.h
   end
-  write(M.kitty_cmd(opts, vim.base64.encode(entry.png)))
+  -- Each chunk is its own escape, so tmux gets one passthrough per chunk.
+  for _, cmd in ipairs(M.kitty_chunks(opts, data)) do
+    write(cmd)
+  end
 end
 
 -- Conversion -----------------------------------------------------------------
