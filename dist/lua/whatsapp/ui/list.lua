@@ -23,7 +23,9 @@ end
 
 local function keep_chat(c)
   if S.filter == "unread" then
-    return c.unread > 0
+    -- Opening a chat reads it. Keep the open one listed, as the phone does,
+    -- so the row just picked does not vanish from under the cursor.
+    return c.unread > 0 or c.jid == S.current
   elseif S.filter == "groups" then
     return c.is_group == true
   end
@@ -146,8 +148,10 @@ function M.render()
     end
     vim.wo[S.wins.list].winbar = bar .. " · g? help"
   end
-  line_jids = jids
+  -- Read the cursor's chat before line_jids changes; afterwards the same row
+  -- names whichever chat moved into it.
   local keep = M.jid_under_cursor() or S.current
+  line_jids = jids
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)

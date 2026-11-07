@@ -152,8 +152,18 @@ return function()
   S.chat_by_jid["111@s.whatsapp.net"].unread = 0
   list.render()
   check(vim.api.nvim_buf_get_lines(S.bufs.list, 1, 2, false)[1]:find("no unread chats", 1, true) ~= nil, "empty filter says so")
+  S.current = "111@s.whatsapp.net"
+  list.render()
+  check(list.jid_under_cursor() == "111@s.whatsapp.net", "the open chat stays under the unread filter once read")
+  S.current = nil
   S.chat_by_jid["111@s.whatsapp.net"].unread = 2
   S.filter = "all"
+  list.render()
+  vim.api.nvim_win_set_cursor(S.wins.list, { 3, 0 })
+  S.chats[1], S.chats[2] = S.chats[2], S.chats[1]
+  list.render()
+  check(list.jid_under_cursor() == "222@g.us", "cursor follows its chat when the list reorders")
+  S.chats[1], S.chats[2] = S.chats[2], S.chats[1]
   list.render()
   vim.api.nvim_win_set_cursor(S.wins.list, { 3, 0 })
   list.next_unread()
