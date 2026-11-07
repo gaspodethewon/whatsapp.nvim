@@ -764,8 +764,14 @@ local function build_layout()
       end
       if ev.event == "FocusLost" then
         set_presence(false)
-      elseif ev.event == "FocusGained" and S.current and S.layout_valid() then
-        set_presence(true)
+      elseif ev.event == "FocusGained" then
+        -- Focus is the only signal that the terminal may have changed
+        -- under us; resending the few on-screen pictures is cheap.
+        require("whatsapp.ui.images").forget_sent()
+        if S.current and S.layout_valid() then
+          set_presence(true)
+          chat.render()
+        end
       end
     end,
   })

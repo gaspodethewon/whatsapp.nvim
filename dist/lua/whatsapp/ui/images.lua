@@ -510,6 +510,13 @@ function M.full_layout(m, width, height)
   return lines, spans
 end
 
+-- A new terminal window, or tmux reattaching from another terminal, holds
+-- none of the images sent so far; forgetting them makes the next render
+-- send them again.
+function M.forget_sent()
+  sent = {}
+end
+
 -- Forget transmitted images so a new session starts clean; the terminal
 -- drops them too.
 function M.reset()
