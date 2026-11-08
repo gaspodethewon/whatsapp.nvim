@@ -19,13 +19,16 @@ require("whatsapp").setup({
     max_width = 60,                              -- cells
     max_height = 20,                             -- rows, at most half the pane
     crop = true,                                 -- crop tall pictures rather than shrink them
+    auto_download = true,                        -- fetch pictures and stickers as they show
   },
 })
 ```
 
 ## Images
 
-`kitty` draws pictures inside their bubble and needs a Kitty graphics terminal (Ghostty, kitty, WezTerm, Konsole) plus ImageMagick or macOS `sips`; `tag` shows the `[image ✓]` line and `gx` opens the file. `auto` picks `kitty` when both are found. Inside tmux the plugin enables `allow-passthrough` for its pane.
+`kitty` draws pictures inside their bubble and needs a Kitty graphics terminal (Ghostty, kitty, WezTerm, Konsole) plus ImageMagick or macOS `sips`; `tag` shows the `[image ✓]` line and `gx` opens the file. `auto` picks `kitty` when both are found. Stickers draw too, smaller than photos.
+
+`auto_download` fetches the pictures and stickers in the chat you open, newest first, one at a time, as the phone does. It works in any terminal, so a chat read in tag mode already has its pictures when you come back in a Kitty graphics terminal. Video, voice notes and documents stay manual. Set it to `false` on a metered connection. Inside tmux the plugin enables `allow-passthrough` for its pane.
 
 ### Remote and tmux
 

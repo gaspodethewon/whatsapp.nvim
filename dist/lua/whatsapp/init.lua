@@ -28,6 +28,7 @@ local defaults = {
     max_width = 60, -- cells; pictures fill the bubble up to this
     max_height = 20, -- rows, also capped at half the pane
     crop = true, -- centre-crop pictures taller than max_height rather than shrink them
+    auto_download = true, -- fetch pictures and stickers in the open chat as they show
   },
 }
 
@@ -651,7 +652,7 @@ function M.media_menu(m)
   local items = {}
   local images = require("whatsapp.ui.images")
   -- Zoom first, so <CR><CR> on a picture is the quick look.
-  if m.media_type == "image" and images.mode() == "kitty" then
+  if images.drawable(m) and images.mode() == "kitty" then
     items[#items + 1] = { "View", function()
       if m.path then
         M.view_image(m)

@@ -324,6 +324,36 @@ return function()
   local chunks = images.kitty_chunks({ a = "T", i = 5, q = 2 }, string.rep("x", 3073))
   check(#chunks == 2 and vim.startswith(chunks[1], "\27_Ga=T,i=5,m=1,q=2;") and #chunks[1] == 4096 + #"\27_Ga=T,i=5,m=1,q=2;\27\\"
     and vim.startswith(chunks[2], "\27_Gm=0,q=2;"), "kitty_chunks splits at 4096 and keeps keys on the first chunk only")
+  do
+    local client = require("whatsapp.client")
+    local real, calls = client.request, {}
+    client.request = function(method, params, cb)
+      if method ~= "media.download" then
+        return real(method, params, cb)
+      end
+      calls[#calls + 1] = { id = params.id, cb = cb }
+    end
+    local prev = S.current
+    S.current = "auto@s.whatsapp.net"
+    local old = { id = "p1", chat_jid = S.current, media_type = "image", ts = 1 }
+    local new = { id = "p2", chat_jid = S.current, media_type = "sticker", ts = 2 }
+    images.auto_download(old)
+    images.auto_download(new)
+    images.auto_download({ id = "v1", chat_jid = S.current, media_type = "voice", ts = 3 })
+    images.auto_download({ id = "p3", chat_jid = S.current, media_type = "image", ts = 4, cached = true })
+    vim.wait(200, function() return #calls > 0 end, 10)
+    check(#calls == 1 and calls[1].id == "p2", "auto download starts with the newest picture, one at a time")
+    calls[1].cb(nil, { path = "/nonexistent/p2.webp" })
+    vim.wait(200, function() return #calls > 1 end, 10)
+    check(#calls == 2 and calls[2].id == "p1" and new.cached, "the next picture follows once the first lands")
+    calls[2].cb("boom")
+    images.auto_download(old)
+    vim.wait(100, function() return #calls > 2 end, 10)
+    check(#calls == 2, "no retry after a failure, and voice notes and cached pictures are never fetched")
+    client.request = real
+    S.current = prev
+    vim.wait(150)
+  end
   local one = images.kitty_chunks({ a = "T" }, "png")
   check(#one == 1 and one[1] == "\27_Ga=T,m=0;" .. vim.base64.encode("png") .. "\27\\", "small payload is one final chunk")
   check(images.wrap_tmux("\27_Ga=T\27\\") == "\27Ptmux;\27\27_Ga=T\27\27\\\27\\", "wrap_tmux doubles inner escapes")

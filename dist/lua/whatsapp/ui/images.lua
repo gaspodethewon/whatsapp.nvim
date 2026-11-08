@@ -29,6 +29,10 @@ local sent = {} -- kitty id -> true once the terminal holds the image
 local passthrough_set = false
 local paths = {} -- message id -> path; message objects are rebuilt on every reopen
 local asked = {} -- message id -> true while a path request is in flight
+local tried = {} -- message id -> true once an automatic download was queued
+local queue = {} -- messages waiting for an automatic download
+local fetching = false
+local render_due = false
 local shown = "" -- signature of the placements drawn by the last render
 -- Ids are per terminal, not per Neovim, so start from the pid to keep two
 -- editors in one window apart. Kept under 2^24 to fit a 24-bit colour.
@@ -158,7 +162,9 @@ local function find_converter()
     local bin = vim.fn.executable("magick") == 1 and "magick" or "convert"
     return {
       name = bin,
-      png = function(src, dst) return { bin, src, "png:" .. dst } end,
+      -- [0] takes the first frame; an animated sticker would otherwise
+      -- become one numbered PNG per frame and none at dst.
+      png = function(src, dst) return { bin, src .. "[0]", "png:" .. dst } end,
     }
   end
   if vim.fn.executable("sips") == 1 then
@@ -317,7 +323,7 @@ local function to_png(src, cb)
 end
 
 -- Start preparing an image for the chat; re-render when it is ready.
-local function prepare(src, jid, max_cols, max_rows)
+local function prepare(src, jid, max_cols, max_rows, no_crop)
   local entry = { state = "pending", max_cols = max_cols, max_rows = max_rows }
   cache[src] = entry
   to_png(src, function(png, w, h)
@@ -326,7 +332,7 @@ local function prepare(src, jid, max_cols, max_rows)
       return
     end
     local cw, ch = cell_size()
-    if S.opts.images.crop == false then
+    if no_crop or S.opts.images.crop == false then
       entry.cols, entry.rows = M.fit(w, h, max_cols, max_rows, cw, ch)
     else
       entry.cols, entry.rows, entry.crop = M.fit_fill(w, h, max_cols, max_rows, cw, ch)
@@ -363,10 +369,90 @@ function M.commit()
   end
 end
 
+local STICKER_COLS, STICKER_ROWS = 16, 8
+
+-- Media the plugin can draw as a picture.
+function M.drawable(m)
+  return m.media_type == "image" or m.media_type == "sticker"
+end
+
+-- Automatic downloads ------------------------------------------------------
+
+-- Many pictures finishing close together would otherwise re-render the
+-- chat once each.
+local function render_soon()
+  if render_due then
+    return
+  end
+  render_due = true
+  vim.defer_fn(function()
+    render_due = false
+    require("whatsapp.ui.chat").render()
+  end, 100)
+end
+
+-- One download at a time: the bridge runs two at most and refuses a third,
+-- so this leaves a slot for a download the user asks for.
+local function pump()
+  if fetching then
+    return
+  end
+  -- Only the open chat; the rest are forgotten so they queue again when
+  -- that chat is next opened.
+  local keep = {}
+  for _, m in ipairs(queue) do
+    if m.chat_jid == S.current then
+      keep[#keep + 1] = m
+    else
+      tried[m.id] = nil
+    end
+  end
+  queue = keep
+  if #queue == 0 then
+    return
+  end
+  -- Newest first: the chat opens at the bottom, so those are on screen.
+  table.sort(queue, function(a, b) return (a.ts or 0) < (b.ts or 0) end)
+  local m = table.remove(queue)
+  fetching = true
+  client.request("media.download", { jid = m.chat_jid, id = m.id }, function(err, res)
+    fetching = false
+    if err and tostring(err):find("in progress", 1, true) then
+      -- A manual download holds the other slot; try again shortly.
+      table.insert(queue, m)
+      vim.defer_fn(pump, 1000)
+      return
+    end
+    if not err and res and res.path then
+      paths[m.id] = res.path
+      m.path = res.path
+      m.cached = true
+      if S.current == m.chat_jid then
+        render_soon()
+      end
+    end
+    pump()
+  end)
+end
+
+-- Queue m for download when the options ask for pictures to arrive on
+-- their own. Each message is tried once per session, so a failure never
+-- loops.
+function M.auto_download(m)
+  if not S.opts.images.auto_download or m.cached or m.path or tried[m.id] or not M.drawable(m) then
+    return
+  end
+  tried[m.id] = true
+  queue[#queue + 1] = m
+  -- After the render that queued it, so the whole screen is queued and
+  -- the newest goes first.
+  vim.schedule(pump)
+end
+
 -- The converted entry for m fitted to max_cols, starting conversion (or a
 -- refit after a resize) when there is none. nil until it is ready.
 local function entry_for(m, max_cols, max_rows)
-  if M.mode() == "tag" or m.media_type ~= "image" then
+  if M.mode() == "tag" or not M.drawable(m) then
     return nil
   end
   if m.path then
@@ -394,9 +480,16 @@ local function entry_for(m, max_cols, max_rows)
   end
   max_cols = math.max(1, math.min(S.opts.images.max_width, max_cols))
   max_rows = math.max(1, math.min(S.opts.images.max_height, max_rows))
+  local sticker = m.media_type == "sticker"
+  if sticker then
+    -- The phone draws stickers small; a 512px square sticker at this cap
+    -- is about the size of a short message, never a photo.
+    max_cols, max_rows = math.min(max_cols, STICKER_COLS), math.min(max_rows, STICKER_ROWS)
+  end
   local entry = cache[m.path]
   if not entry or (entry.state ~= "pending" and (entry.max_cols ~= max_cols or entry.max_rows ~= max_rows)) then
-    prepare(m.path, m.chat_jid, max_cols, max_rows)
+    -- A sticker is a cut-out shape; cropping would cut it.
+    prepare(m.path, m.chat_jid, max_cols, max_rows, sticker)
     return nil
   end
   return entry.state == "ready" and entry or nil

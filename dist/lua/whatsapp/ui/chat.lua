@@ -400,7 +400,8 @@ function M.render(opts)
   -- the tag's indent in the lines layout. Either way above the hint.
   images.clear(buf)
   for _, e in ipairs(media_rows) do
-    if e.m.media_type == "image" then
+    images.auto_download(e.m)
+    if images.drawable(e.m) then
       if S.opts.layout == "bubbles" then
         local footer = lines[e.last] or ""
         local indent = footer:match("^%s*")
