@@ -760,10 +760,29 @@ func (w *WA) ListMessages(jid string, limit int, before int64) ([]Message, error
 	if err != nil {
 		return nil, err
 	}
+	kept := msgs[:0]
 	for i := range msgs {
+		if nowSkipped(&msgs[i]) {
+			continue
+		}
 		w.decorate(&msgs[i])
+		kept = append(kept, msgs[i])
 	}
-	return msgs, nil
+	return kept, nil
+}
+
+// nowSkipped reports a row stored as unsupported whose type extract has
+// since learned to skip, such as album headers saved by older bridges.
+// Hiding them here keeps old stores clean without a migration.
+func nowSkipped(m *Message) bool {
+	if m.Text != unsupportedText || m.raw == nil {
+		return false
+	}
+	var pm waE2E.Message
+	if proto.Unmarshal(m.raw, &pm) != nil {
+		return false
+	}
+	return extract(&pm).Skip
 }
 
 func (w *WA) decorate(m *Message) {
